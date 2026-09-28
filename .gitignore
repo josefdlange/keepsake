@@ -1,15 +1,51 @@
+# Python
 __pycache__/
 *.py[cod]
+*.so
 .venv/
-.pytest_cache/
-.ruff_cache/
+venv/
+build/
 dist/
 *.egg-info/
+.eggs/
 
-# Never commit secrets, state, or spike output.
+# Tooling caches and reports
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+.coverage.*
+htmlcov/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Environment files (keepsake never reads secrets from env, but don't leak them either)
+.env
+.env.*
+
+# --- keepsake: never commit secrets, sessions, state, or real config ---
+# Secrets live in ~/.local/share/keepsake/; these patterns catch accidental copies.
+keep_master_token
+keep_android_id
 *.token
-*.db
-*.sqlite3
+*.cookiejar
+*.session
+icloud/
 secrets/
+# State and logs
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+*.log
+# Real config (the template is deploy/config.example.toml)
+config.toml
+# Spike output contains raw account data
 spikes/output/
-spikes/*.log

@@ -3,6 +3,8 @@ name = "keepsake"
 version = "0.1.0"
 description = "Two-way sync between a Google Keep checklist and an Apple Reminders list"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Josef Lange", email = "josef.d.lange@gmail.com" }
 ]

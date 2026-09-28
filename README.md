@@ -184,3 +184,8 @@ uv run pyright
   Re-run them after upgrading `gkeepapi` or `pyicloud`.
 - **Library docs.** See `CLAUDE.md` for project conventions. The docstrings of
   `keep_backend.py` and `reminders_backend.py` record what was verified about each library.
+
+## License
+
+[MIT](LICENSE). keepsake is not affiliated with or endorsed by Google or Apple, and it relies on
+unofficial, reverse-engineered APIs that may break or change at any time. Use at your own risk.
