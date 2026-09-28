@@ -6,6 +6,8 @@ pure bookkeeping, is an operation, so a dry run shows exactly what a real run wo
 
 Unmapped items that are already checked are ignored: completed items are never introduced to the
 other side, and never used for pairing. Once an item is mapped, its checked state syncs normally.
+If an item is deleted on one side while its only change on the other side is being checked, the
+pair is simply unlinked (both mean "done").
 """
 
 from __future__ import annotations
@@ -58,12 +60,17 @@ class Update:
 
 @dataclass(frozen=True)
 class Delete:
-    """Delete the item on ``side`` and drop the pair's mapping."""
+    """Delete the item on ``side`` and drop the pair's mapping.
+
+    ``checked`` is the item's (unchanged) checked state; deletes of checked items are the
+    routine "clear completed" case and are exempt from the deletion guards.
+    """
 
     side: Side
     keep_id: str
     rem_id: str
     text: str
+    checked: bool
     reason: str
 
     @property
@@ -176,6 +183,14 @@ def _text_changed(item: Item, pair: BasePair) -> bool:
 
 def _one_side_deleted(deleted_on: Side, survivor: Item, pair: BasePair) -> Operation:
     survivor_side = deleted_on.other
+    if survivor.checked and not pair.checked and not _text_changed(survivor, pair):
+        # Deleting and checking both mean "done". Keep the checked item where it is, unmapped
+        # (and so ignored), instead of recreating a checked copy on the deleting side.
+        return Unlink(
+            pair.keep_id,
+            pair.rem_id,
+            f"deleted on {deleted_on} and checked on {survivor_side}; both mean done",
+        )
     if _changed(survivor, pair):
         return Create(
             side=deleted_on,
@@ -189,6 +204,7 @@ def _one_side_deleted(deleted_on: Side, survivor: Item, pair: BasePair) -> Opera
         keep_id=pair.keep_id,
         rem_id=pair.rem_id,
         text=survivor.text,
+        checked=survivor.checked,
         reason=f"deleted on {deleted_on}",
     )
 

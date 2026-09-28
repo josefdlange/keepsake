@@ -275,11 +275,25 @@ CASES = [
         [("create", K, "Oat milk", False, "r1")],
     ),
     Case(
-        "deleted on reminders, checked on keep: recreate on reminders",
+        "deleted on reminders, checked on keep: both mean done, unlink",
         [item("k1", "Milk", True)],
         [],
         [pair("k1", "r1", "Milk", False)],
-        [("create", R, "Milk", True, "k1")],
+        [("unlink", "k1", "r1")],
+    ),
+    Case(
+        "deleted on keep, checked on reminders: unlink",
+        [],
+        [item("r1", "Milk", True)],
+        [pair("k1", "r1", "Milk", False)],
+        [("unlink", "k1", "r1")],
+    ),
+    Case(
+        "deleted on reminders, renamed and checked on keep: recreate",
+        [item("k1", "Oat milk", True)],
+        [],
+        [pair("k1", "r1", "Milk", False)],
+        [("create", R, "Oat milk", True, "k1")],
     ),
     Case(
         "deleted on reminders, unchecked on keep: recreate",

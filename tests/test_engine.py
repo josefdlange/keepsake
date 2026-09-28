@@ -131,6 +131,30 @@ def test_small_deletes_below_fraction_minimum_are_allowed() -> None:
     w.assert_in_sync()
 
 
+def test_clearing_an_all_checked_list_passes_both_guards() -> None:
+    w = seeded(8)
+    for kid in list(w.keep.items):
+        w.keep.user_edit(kid, checked=True)
+    w.sync()
+    for kid in list(w.keep.items):
+        w.keep.user_delete(kid)
+    w.sync()  # empty fetch + 100% deletes, but every deleted item was checked
+    assert w.rem.items == {}
+    assert w.store.pairs() == []
+
+
+def test_checked_deletes_do_not_count_toward_threshold() -> None:
+    w = seeded(20)
+    ids = list(w.keep.items)
+    for kid in ids[:15]:
+        w.keep.user_edit(kid, checked=True)
+    w.sync()
+    for kid in ids[:15]:
+        w.keep.user_delete(kid)
+    w.sync()
+    assert len(w.rem.items) == 5
+
+
 def test_clearing_checked_items_after_shopping_is_allowed() -> None:
     w = seeded(12)
     for kid in list(w.keep.items)[:5]:
