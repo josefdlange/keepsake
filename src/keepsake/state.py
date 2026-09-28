@@ -42,6 +42,9 @@ KEEP_STATE = "keep_state"
 LAST_SUCCESS = "last_success"
 LAST_ERROR = "last_error"
 LAST_ERROR_AT = "last_error_at"
+REMINDERS_LIST_ID = "reminders_list_id"
+REMINDERS_LIST_NAME = "reminders_list_name"
+ICLOUD_PASSWORD_BLOCKED = "icloud_password_blocked"  # noqa: S105 - a key name
 
 
 def _now() -> str:

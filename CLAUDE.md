@@ -30,6 +30,10 @@ source and re-run the spikes in `spikes/`.
   - `state.py`: SQLite state store (migrations via `PRAGMA user_version`)
   - `planner.py`: pure `plan()` with no I/O
   - `executor.py`: applies operations and updates base state
+  - `engine.py`: one sync pass with the safety guards
+  - `keep_backend.py`, `reminders_backend.py`: real backends (verified facts in their docstrings)
+  - `icloud.py`, `auth.py`: iCloud session reuse and the interactive auth flows
+  - `config.py`, `paths.py`, `app.py`, `cli.py`: config, XDG paths, wiring, CLI
 - The planner must stay pure and deterministic, with no network, clock, or randomness. All
   behavior is covered by table-driven tests in `tests/`.
 - Change detection compares exact text; pairing compares normalized text (trim, collapse
@@ -38,4 +42,7 @@ source and re-run the spikes in `spikes/`.
   stop all writes.
 - Secrets live under `~/.local/share/keepsake/` (dir 0700, files 0600). Never put them in the repo,
   config, argv, env vars, or logs.
+- Never let unattended code retry an Apple ID password: a few failed logins lock the account
+  (error -20209). The daemon only reuses the saved session (one keyring attempt at most).
+- Never call pyicloud's `lists()` outside `keepsake auth icloud`: it walks the whole zone (~60s).
 - Personal tool: keep code straightforward, no frameworks, no async.

@@ -26,6 +26,14 @@ class NotFoundError(BackendError):
     """The item no longer exists remotely."""
 
 
+class RetryLater(BackendError):
+    """The service asked us to back off (rate limit, index rebuild). Not an auth problem."""
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 class Backend(Protocol):
     """One side of the sync. Item ids are stable strings owned by the backend.
 
