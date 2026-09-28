@@ -3,9 +3,10 @@
 Echo suppression: after each successful write the base is set to exactly what was written, so the
 next pass sees our own writes as unchanged.
 
-State changes for writes to a side are held back until that side's ``flush()`` succeeds, because
-some backends (Keep) buffer writes locally. On failure, the executor stops issuing new writes, still
-flushes and records everything that did succeed, then re-raises.
+Writes to a write-through backend (Reminders) are recorded as soon as they succeed. Writes to a
+buffered backend (Keep) are recorded only after its ``flush()`` succeeds; if the flush fails or is
+skipped, the buffered writes are discarded. On failure, the executor stops issuing new writes,
+records everything that did reach a server, then re-raises.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TypeVar
 
-from keepsake.backend import AuthError, Backend, BackendError, ConflictError, NotFoundError
+from keepsake.backend import AuthError, Backend, ConflictError, NotFoundError
 from keepsake.model import Side
 from keepsake.planner import (
     Create,
@@ -49,8 +50,10 @@ def execute(
 ) -> ExecutionResult:
     result = ExecutionResult()
     pending: dict[Side, list[tuple[Operation, Callable[[], None]]]] = {s: [] for s in Side}
-    error: BackendError | None = None
+    error: Exception | None = None
 
+    # One transaction per pass, but it never rolls back: every write that reached a server is
+    # recorded, even when the pass aborts. Losing such a record could orphan an item for good.
     with store.transaction():
         for op in ops:
             try:
@@ -59,34 +62,42 @@ def execute(
                 log.warning("skipped %s: %s", describe(op), exc)
                 result.skipped.append((op, str(exc)))
                 continue
-            except BackendError as exc:
+            except Exception as exc:
                 error = exc
                 log.error("aborting pass at %s: %s", describe(op), exc)
                 break
             if effect is None:
                 result.applied.append(op)
+                continue
+            side, record = effect
+            if backends[side].buffered:
+                pending[side].append((op, record))
             else:
-                pending[effect[0]].append((op, effect[1]))
+                record()
+                result.applied.append(op)
 
         for side in Side:
             if not pending[side]:
                 continue
+            backend = backends[side]
             if isinstance(error, AuthError):
                 # Nothing more goes to the wire after an auth failure.
-                result.skipped.extend(
-                    (op, "not flushed after auth failure") for op, _ in pending[side]
-                )
-                continue
-            try:
-                _timed(f"{side}.flush", backends[side].flush)
-            except BackendError as exc:
-                log.error("flush of %s failed: %s", side, exc)
-                result.skipped.extend((op, f"flush failed: {exc}") for op, _ in pending[side])
-                error = error or exc
-                continue
-            for op, record in pending[side]:
-                record()
-                result.applied.append(op)
+                reason = "discarded after auth failure"
+            else:
+                try:
+                    _timed(f"{side}.flush", backend.flush)
+                except Exception as exc:
+                    log.error("flush of %s failed: %s", side, exc)
+                    reason = f"flush failed: {exc}"
+                    error = error or exc
+                else:
+                    for op, record in pending[side]:
+                        record()
+                        result.applied.append(op)
+                    continue
+            # Unflushed writes must never reach the server later, or they would be unrecorded.
+            backend.discard()
+            result.skipped.extend((op, reason) for op, _ in pending[side])
 
     if error is not None:
         raise error

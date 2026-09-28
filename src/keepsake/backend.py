@@ -27,7 +27,15 @@ class NotFoundError(BackendError):
 
 
 class Backend(Protocol):
-    """One side of the sync. Item ids are stable strings owned by the backend."""
+    """One side of the sync. Item ids are stable strings owned by the backend.
+
+    A ``buffered`` backend applies writes locally and sends them on ``flush()``; ``create()``
+    must still return the item's final id immediately. Write-through backends send each write
+    as it is made, and their ``flush()``/``discard()`` are no-ops.
+    """
+
+    @property
+    def buffered(self) -> bool: ...
 
     def snapshot(self) -> list[Item]:
         """Authoritative full read of every item in the synced list."""
@@ -56,6 +64,10 @@ class Backend(Protocol):
         """Push any locally buffered writes. A no-op for backends that write through."""
         ...
 
+    def discard(self) -> None:
+        """Drop buffered writes that were not flushed. They must never be sent later."""
+        ...
+
 
 def _tick_clock(start: datetime | None = None) -> Callable[[], datetime]:
     base = start or datetime(2026, 1, 1, tzinfo=UTC)
@@ -64,7 +76,10 @@ def _tick_clock(start: datetime | None = None) -> Callable[[], datetime]:
 
 
 class FakeBackend:
-    """In-memory backend. Writes apply immediately; ``flush()`` is a no-op.
+    """In-memory backend.
+
+    By default writes apply immediately. With ``buffered=True`` (modelling Keep), writes are
+    staged until ``flush()`` and dropped by ``discard()``; ``create()`` still returns the new id.
 
     ``clock`` supplies ``modified_at`` values; pass a shared clock to two fakes so that
     timestamps are comparable across sides. ``timestamps=False`` models a backend that
@@ -77,8 +92,11 @@ class FakeBackend:
         *,
         clock: Callable[[], datetime] | None = None,
         timestamps: bool = True,
+        buffered: bool = False,
     ) -> None:
         self.prefix = prefix
+        self.buffered = buffered
+        self.staged: list[Callable[[], None]] = []
         self.items: dict[str, Item] = {}
         self.clock = clock or _tick_clock()
         self.timestamps = timestamps
@@ -123,11 +141,21 @@ class FakeBackend:
         self._maybe_fail("poll")
         return self.snapshot()
 
+    def _write(self, apply: Callable[[], None]) -> None:
+        if self.buffered:
+            self.staged.append(apply)
+        else:
+            apply()
+
     def create(self, text: str, checked: bool) -> str:
         self._maybe_fail("create")
         backend_id = f"{self.prefix}{next(self._ids)}"
-        self.items[backend_id] = Item(backend_id, text, checked, self._now())
-        self.calls.append(("create", backend_id, text, str(checked)))
+
+        def apply() -> None:
+            self.items[backend_id] = Item(backend_id, text, checked, self._now())
+            self.calls.append(("create", backend_id, text, str(checked)))
+
+        self._write(apply)
         return backend_id
 
     def update(
@@ -136,15 +164,30 @@ class FakeBackend:
         self._maybe_fail("update")
         if backend_id not in self.items:
             raise NotFoundError(backend_id)
-        self.user_edit(backend_id, text=text, checked=checked)
-        self.calls.append(("update", backend_id, str(text), str(checked)))
+
+        def apply() -> None:
+            if backend_id in self.items:
+                self.user_edit(backend_id, text=text, checked=checked)
+                self.calls.append(("update", backend_id, str(text), str(checked)))
+
+        self._write(apply)
 
     def delete(self, backend_id: str) -> None:
         self._maybe_fail("delete")
         if backend_id not in self.items:
             raise NotFoundError(backend_id)
-        del self.items[backend_id]
-        self.calls.append(("delete", backend_id))
+
+        def apply() -> None:
+            self.items.pop(backend_id, None)
+            self.calls.append(("delete", backend_id))
+
+        self._write(apply)
 
     def flush(self) -> None:
         self._maybe_fail("flush")
+        staged, self.staged = self.staged, []
+        for apply in staged:
+            apply()
+
+    def discard(self) -> None:
+        self.staged = []

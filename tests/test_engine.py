@@ -13,7 +13,7 @@ from keepsake.state import LAST_SUCCESS, StateStore
 
 class World:
     def __init__(self, timestamps: bool = True) -> None:
-        self.keep = FakeBackend("k", timestamps=timestamps)
+        self.keep = FakeBackend("k", timestamps=timestamps, buffered=True)
         self.rem = FakeBackend("r", clock=self.keep.clock, timestamps=timestamps)
         self.store = StateStore(":memory:")
 
@@ -208,20 +208,82 @@ def test_partial_failure_keeps_successful_writes_and_converges() -> None:
     assert len(w.keep.items) == 4
 
 
-def test_flush_failure_does_not_record_base_and_heals_without_duplicates() -> None:
+def test_flush_failure_discards_keep_writes_and_heals_without_duplicates() -> None:
     w = seeded(1)
     w.rem.user_add("Eggs")
     w.keep.fail_on["flush"] = BackendError("sync failed")
     with pytest.raises(BackendError):
         w.sync()
-    assert len(w.store.pairs()) == 1  # Keep create not recorded
+    assert len(w.store.pairs()) == 1  # Keep create not recorded...
+    assert len(w.keep.items) == 1  # ...and not applied later either.
     del w.keep.fail_on["flush"]
-    # FakeBackend applied the write anyway (like gkeepapi pushing dirty nodes on the next
-    # sync). The two unmapped "Eggs" pair up rather than duplicating.
     w.sync()
     w.assert_in_sync()
     assert len(w.keep.items) == 2
-    assert len(w.store.pairs()) == 2
+
+
+def test_recreate_with_flush_failure_does_not_duplicate() -> None:
+    w = seeded(2)
+    kid = next(i for i, it in w.keep.items.items() if it.text == "item 0")
+    rid = next(i for i, it in w.rem.items.items() if it.text == "item 0")
+    w.keep.user_delete(kid)
+    w.rem.user_edit(rid, text="Oat milk")
+    w.keep.fail_on["flush"] = BackendError("sync failed")
+    with pytest.raises(BackendError):
+        w.sync()
+    del w.keep.fail_on["flush"]
+    w.sync()
+    w.assert_in_sync()
+    assert w.texts(Side.KEEP) == [("Oat milk", False), ("item 1", False)]
+    assert w.sync().ops == []
+
+
+def test_reminders_write_is_recorded_before_later_auth_failure() -> None:
+    w = World()
+    w.keep.user_add("a")
+    w.keep.user_add("b")
+    w.sync(dry_run=True)
+    calls = 0
+
+    def create_then_fail(text: str, checked: bool) -> str:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise AuthError("expired")
+        return FakeBackend.create(w.rem, text, checked)
+
+    w.rem.create = create_then_fail  # type: ignore[method-assign]
+    with pytest.raises(AuthError):
+        w.sync()
+    assert len(w.store.pairs()) == 1
+    (p,) = w.store.pairs()
+    # The user completes that reminder while we wait for re-auth. It must stay mapped, so the
+    # check syncs back to Keep instead of the Keep item being created a second time.
+    w.rem.user_edit(p.rem_id, checked=True)
+    del w.rem.create
+    w.sync()
+    w.assert_in_sync()
+    assert len(w.rem.items) == 2
+    assert w.keep.items[p.keep_id].checked
+
+
+def test_unexpected_exception_still_records_successful_writes() -> None:
+    w = World()
+    w.keep.user_add("a")
+    w.keep.user_add("b")
+    calls = 0
+
+    def create_then_crash(text: str, checked: bool) -> str:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("library bug")
+        return FakeBackend.create(w.rem, text, checked)
+
+    w.rem.create = create_then_crash  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError):
+        w.sync()
+    assert len(w.store.pairs()) == 1
 
 
 def test_auth_error_stops_writes_and_propagates() -> None:

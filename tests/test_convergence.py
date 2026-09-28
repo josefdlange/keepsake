@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import random
 from collections import Counter
 
 import pytest
 
-from keepsake.backend import FakeBackend
+from keepsake.backend import AuthError, BackendError, ConflictError, FakeBackend
 from keepsake.engine import Thresholds, sync_pass
 from keepsake.model import normalize
 from keepsake.planner import Policy, TieBreaker
@@ -39,11 +40,22 @@ def user_edit(rng: random.Random, backend: FakeBackend, intros: Counter[str]) ->
         backend.user_delete(target)
 
 
+FAULTS: list[tuple[str, str, BackendError]] = [
+    ("keep", "flush", BackendError("keep sync failed")),
+    ("keep", "create", BackendError("keep create failed")),
+    ("reminders", "create", BackendError("cloudkit 500")),
+    ("reminders", "update", ConflictError("stale tag")),
+    ("reminders", "delete", AuthError("session expired")),
+    ("reminders", "poll", BackendError("timeout")),
+]
+
+
+@pytest.mark.parametrize("faults", [False, True])
 @pytest.mark.parametrize("timestamps", [True, False])
 @pytest.mark.parametrize("seed", range(40))
-def test_random_edits_converge(seed: int, timestamps: bool) -> None:
+def test_random_edits_converge(seed: int, timestamps: bool, faults: bool) -> None:
     rng = random.Random(seed)
-    keep = FakeBackend("k", timestamps=timestamps)
+    keep = FakeBackend("k", timestamps=timestamps, buffered=True)
     rem = FakeBackend("r", clock=keep.clock, timestamps=timestamps)
     store = StateStore(":memory:")
     policy = Policy(tie_breaker=rng.choice(list(TieBreaker)))
@@ -58,7 +70,14 @@ def test_random_edits_converge(seed: int, timestamps: bool) -> None:
         for _ in range(rng.randint(0, 4)):
             user_edit(rng, rng.choice([keep, rem]), intros)
         if rng.random() < 0.7:
-            run(full=rng.random() < 0.2)
+            injected = faults and rng.random() < 0.3
+            if injected:
+                side, op, exc = rng.choice(FAULTS)
+                (keep if side == "keep" else rem).fail_on[op] = exc
+            with contextlib.suppress(BackendError):
+                run(full=rng.random() < 0.2)
+            keep.fail_on.clear()
+            rem.fail_on.clear()
 
     for _ in range(3):
         if run() == 0:
