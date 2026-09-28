@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 from pathlib import Path
+from typing import IO
 
 
 def config_path() -> Path:
@@ -60,3 +62,19 @@ def tighten_permissions(root: Path) -> None:
         if path.is_symlink():
             continue
         path.chmod(0o700 if path.is_dir() else 0o600)
+
+
+class AlreadyRunning(Exception):
+    pass
+
+
+def acquire_lock() -> IO[str]:
+    """Hold an exclusive lock so only one sync (daemon or --once) writes at a time. Keep the
+    returned handle open for the life of the process."""
+    handle = (data_dir() / "lock").open("w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise AlreadyRunning("another keepsake sync is running") from None
+    return handle

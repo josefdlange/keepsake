@@ -11,7 +11,7 @@ from keepsake.backend import Backend
 from keepsake.executor import ExecutionResult, execute
 from keepsake.model import BasePair, Item, Side
 from keepsake.planner import Delete, Operation, Policy, describe, plan
-from keepsake.state import LAST_SUCCESS, StateStore
+from keepsake.state import KEEP_ITEM_COUNT, LAST_SUCCESS, REMINDERS_ITEM_COUNT, StateStore
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +87,8 @@ def sync_pass(
     keep_items = keep.snapshot() if full else keep.poll()
     rem_items = reminders.snapshot() if full else reminders.poll()
     log.debug("fetched %d keep / %d reminders items", len(keep_items), len(rem_items))
+    store.set(KEEP_ITEM_COUNT, str(len(keep_items)))
+    store.set(REMINDERS_ITEM_COUNT, str(len(rem_items)))
 
     if not force:
         check_fetch(Side.KEEP, keep_items, base)

@@ -1,0 +1,32 @@
+# keepsake: two-way sync between a Google Keep checklist and an Apple Reminders list.
+#
+# Template unit; the instance name is the user to run as (never root):
+#   sudo cp deploy/keepsake@.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now keepsake@$USER
+#
+# Assumes the repo is cloned at ~/keepsake and `uv sync` has created ~/keepsake/.venv.
+# Logs go to journald: journalctl -u keepsake@$USER -f
+
+[Unit]
+Description=keepsake Keep <-> Reminders sync for %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/keepsake
+ExecStart=/home/%i/keepsake/.venv/bin/keepsake run
+Restart=on-failure
+RestartSec=30
+# Everything keepsake and pyicloud write (sessions, cookies, state) must be private.
+UMask=0077
+Environment=PYTHONUNBUFFERED=1
+# Secrets are read from ~/.local/share/keepsake; nothing sensitive in the unit or environment.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

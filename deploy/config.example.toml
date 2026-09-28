@@ -1,0 +1,21 @@
+[keep]
+email = "you@gmail.com"
+note_title = "Groceries"
+# note_id = "..."          # only needed if several checklists share the title
+
+[reminders]
+apple_id = "you@icloud.com"
+list_name = "Groceries"
+use_keyring = false        # true: store the Apple ID password in the system keyring
+
+[sync]
+poll_interval = 60          # seconds between incremental passes
+full_reconcile_interval = 3600
+tie_breaker = "keep"        # "keep" or "reminders": who wins simultaneous text edits
+max_deletes = 10            # block a pass deleting more unchecked items than this...
+max_delete_fraction = 0.5   # ...or more than this share of mapped items
+fraction_min_deletes = 3    # (the share rule applies from this many deletes)
+
+[notify]
+# webhook_url = "https://ntfy.sh/your-private-topic"
+cooldown_hours = 4
