@@ -1,0 +1,54 @@
+[project]
+name = "keepsake"
+version = "0.1.0"
+description = "Two-way sync between a Google Keep checklist and an Apple Reminders list"
+readme = "README.md"
+authors = [
+    { name = "Josef Lange", email = "josef.d.lange@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "gkeepapi>=0.17.1",
+    "gpsoauth>=2.0.0",
+    "pyicloud>=2.7.0",
+    "typer>=0.27.2",
+]
+
+[project.scripts]
+keepsake = "keepsake.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.8.6,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "ruff>=0.16.9",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "PTH", "S"]
+ignore = ["S101", "S311"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
+"spikes/**" = ["S", "T20"]
+
+[tool.pyright]
+include = ["src", "tests", "spikes"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+# gkeepapi and pyicloud ship without complete type information.
+reportMissingTypeStubs = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
