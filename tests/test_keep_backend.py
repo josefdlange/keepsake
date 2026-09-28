@@ -11,7 +11,7 @@ from gkeepapi import exception as gexc
 from keepsake.backend import AuthError, BackendError, NotFoundError, RetryLater
 from keepsake.keep_backend import KeepBackend
 
-NOTE_ID = "1646256009707.368896.1991954868"
+NOTE_ID = "1700000000000.123456.1234567890"
 EPOCH_TS = {
     "kind": "notes#timestamps",
     "created": "1970-01-01T00:00:00.001Z",
