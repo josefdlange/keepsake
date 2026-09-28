@@ -26,6 +26,25 @@ from pyicloud.services.reminders import Reminder
 COOKIE_DIR = SPIKE_DIR / "icloud"
 
 
+def explain_login_failure(exc: BaseException) -> None:
+    """pyicloud reports every signin/complete error as "Invalid email/password combination";
+    print the chained causes so Apple's real status code and error body are visible."""
+    print("\n  Login failed. Exception chain (Apple's real reason is usually last):")
+    seen: BaseException | None = exc
+    while seen is not None:
+        print(f"   - {type(seen).__name__}: {str(seen)[:800]}")
+        code = getattr(seen, "code", None)
+        response = getattr(seen, "response", None)
+        if code is not None:
+            print(f"       code={code}")
+        if response is not None:
+            url = response.url.split("?")[0]
+            print(f"       HTTP {response.status_code} {response.request.method} {url}")
+            print(f"       body={response.text[:800]}")
+        seen = seen.__cause__ or seen.__context__
+    print("\n  Don't retry more than 2-3 times: repeated failures can lock the Apple ID.")
+
+
 def login(apple_id: str) -> PyiCloudService:
     cookie_dir = str(private_dir(COOKIE_DIR))
     # authenticate=False: the constructor would otherwise consult the keyring, which on a
@@ -42,7 +61,11 @@ def login(apple_id: str) -> PyiCloudService:
             apple_id, password=password, cookie_directory=cookie_dir, authenticate=False
         )
         default_timeout(api.session)
-        timed("authenticate() with password", api.authenticate)
+        try:
+            timed("authenticate() with password", api.authenticate)
+        except PyiCloudFailedLoginException as login_exc:
+            explain_login_failure(login_exc)
+            sys.exit(1)
 
     if api.requires_2fa:
         header("2FA")
