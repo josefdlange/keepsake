@@ -139,12 +139,13 @@ class RemindersBackend:
         return rem.list_id == self._list_id and not rem.deleted and not rem.parent_reminder_id
 
     def _accept(self, rem: Reminder) -> None:
+        # The feed spans every list; only our own records can fail the read.
+        if not self._ours(rem):
+            self._cache.pop(rem.id, None)
+            return
         if rem.title == DECODE_FAILURE_TITLE:
             raise BackendError(f"pyicloud could not decode the title of {rem.id}")
-        if self._ours(rem):
-            self._cache[rem.id] = rem
-        else:
-            self._cache.pop(rem.id, None)
+        self._cache[rem.id] = rem
 
     def _take_cursor(self) -> str:
         start = time.monotonic()

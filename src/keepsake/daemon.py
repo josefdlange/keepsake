@@ -20,6 +20,16 @@ log = logging.getLogger(__name__)
 MAX_BACKOFF = 1800.0
 AUTH_BACKOFF_START = 60.0
 AUTH_BACKOFF_MAX = 3600.0
+# Notify when no pass has succeeded for this long for any non-auth reason.
+FAILING_NOTIFY_AFTER = 3600.0
+
+# Fixed notification texts: exception messages can embed Apple's response bodies (account and
+# session identifiers), and the webhook is a third party. Details stay in journald.
+AUTH_MESSAGE = (
+    "Sync stopped: authentication failed. SSH in, check `keepsake status`, and re-run "
+    "`keepsake auth keep` or `keepsake auth icloud`."
+)
+FAILING_MESSAGE = "No successful sync for over an hour. SSH in and check `keepsake status`."
 
 BackendFactory = Callable[[], Backend]
 
@@ -53,6 +63,7 @@ class Daemon:
         self.last_full: float | None = None
         self.failures = 0
         self.auth_failures = 0
+        self.last_ok = clock()
 
     def run(self, max_passes: int | None = None) -> None:
         passes = 0
@@ -71,6 +82,10 @@ class Daemon:
 
     def _backoff(self, base: float, cap: float) -> float:
         return min(cap, base * 2 ** max(self.failures - 1, 0))
+
+    def _check_failing(self) -> None:
+        if self.clock() - self.last_ok >= FAILING_NOTIFY_AFTER:
+            self.notifier.notify("failing", FAILING_MESSAGE)
 
     def step(self) -> float:
         """Run one pass; return how long to sleep before the next."""
@@ -94,7 +109,7 @@ class Daemon:
             for op in blocked.ops:
                 log.warning("  would: %s", describe(op))
             record_error(self.store, f"blocked: {blocked}")
-            self.notifier.notify(blocked.kind, str(blocked))
+            self.notifier.notify(blocked.kind, str(blocked))  # counts only, no item text
             return self.config.poll_interval
         except AuthError as exc:
             self.auth_failures += 1
@@ -102,11 +117,12 @@ class Daemon:
             delay = min(AUTH_BACKOFF_MAX, AUTH_BACKOFF_START * 2 ** (self.auth_failures - 1))
             log.error("AUTH FAILURE, all writes stopped: %s (retrying in %.0fs)", exc, delay)
             record_error(self.store, f"auth: {exc}")
-            self.notifier.notify("auth", f"{exc}\nSSH in and re-run `keepsake auth ...`.")
+            self.notifier.notify("auth", AUTH_MESSAGE)
             return delay
         except RetryLater as exc:
             delay = max(exc.retry_after or self.config.poll_interval, 5.0)
             log.warning("service asked us to back off: %s (retrying in %.0fs)", exc, delay)
+            self._check_failing()
             return delay
         except BackendError as exc:
             self.failures += 1
@@ -114,6 +130,7 @@ class Daemon:
             delay = self._backoff(self.config.poll_interval, MAX_BACKOFF)
             log.error("pass failed: %s (retrying in %.0fs)", exc, delay)
             record_error(self.store, f"error: {exc}")
+            self._check_failing()
             return delay
         except Exception as exc:
             self.failures += 1
@@ -121,14 +138,16 @@ class Daemon:
             delay = self._backoff(self.config.poll_interval, MAX_BACKOFF)
             log.exception("unexpected error (retrying in %.0fs)", delay)
             record_error(self.store, f"unexpected: {type(exc).__name__}: {exc}")
+            self._check_failing()
             return delay
 
+        self.last_ok = self.clock()
         if full:
-            self.last_full = self.clock()
+            self.last_full = self.last_ok
         if self.failures or self.auth_failures:
             log.info("recovered")
         self.failures = self.auth_failures = 0
-        for issue in ("auth", "empty_fetch", "delete_threshold"):
+        for issue in ("auth", "empty_fetch", "delete_threshold", "failing"):
             self.notifier.resolved(issue)
         if result.ops:
             log.info("pass applied %d operation(s)", len(result.ops))

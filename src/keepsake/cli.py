@@ -34,14 +34,13 @@ def main(
     # Everything we (and pyicloud) write is private: tokens, sessions, cookies, state.
     os.umask(0o077)
     install_socket_timeout()
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
-    if not verbose:
-        # pyicloud and urllib3 are chatty at INFO and may log account details.
-        for name in ("pyicloud", "urllib3", "gkeepapi"):
-            logging.getLogger(name).setLevel(logging.WARNING)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    # -v only raises our own loggers (which log per-call durations and URL paths). The libraries
+    # stay at WARNING even then: their debug output includes URLs with account ids and auth
+    # payloads, which must never reach the journal.
+    logging.getLogger("keepsake").setLevel(logging.DEBUG if verbose else logging.INFO)
+    for name in ("pyicloud", "urllib3", "gkeepapi", "gpsoauth"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 @app.command()

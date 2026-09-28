@@ -167,3 +167,22 @@ def test_run_stops_on_event(tmp_path: Path) -> None:
     h.daemon.stop.set()
     h.daemon.run()
     assert h.rem.fetches == []
+
+
+def test_persistent_non_auth_failure_notifies_after_an_hour(tmp_path: Path) -> None:
+    h = Harness(tmp_path)
+    h.step()
+    h.keep.fail_on["snapshot"] = BackendError("Keep note renamed?")
+    h.step(advance=1800)
+    assert h.sent == []
+    h.step(advance=1800)
+    h.step(advance=60)
+    assert [t for t, _ in h.sent] == ["keepsake: failing"]
+
+
+def test_auth_notification_never_includes_exception_text(tmp_path: Path) -> None:
+    h = Harness(tmp_path)
+    h.keep_error = AuthError('HTTP 401: {"dsid": "12345", "session": "secret"}')
+    h.step()
+    assert len(h.sent) == 1
+    assert "dsid" not in h.sent[0][1] and "secret" not in h.sent[0][1]

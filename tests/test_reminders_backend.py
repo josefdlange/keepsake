@@ -303,3 +303,11 @@ def test_undecodable_title_fails_the_read() -> None:
     svc.user_add(DECODE_FAILURE_TITLE)
     with pytest.raises(BackendError, match="decode"):
         backend.snapshot()
+
+
+def test_undecodable_title_in_another_list_is_ignored() -> None:
+    svc, backend, _ = setup()
+    milk = svc.user_add("Milk")
+    backend.snapshot()
+    svc.user_add(DECODE_FAILURE_TITLE, list_id=OTHER)
+    assert texts(backend) == {milk: ("Milk", False)}

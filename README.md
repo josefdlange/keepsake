@@ -104,7 +104,24 @@ These steps are for Raspberry Pi OS 64-bit (Bookworm or later, Python 3.11+).
    ```
    The first sync merges both lists by text and never deletes anything.
 
-6. **Enable the service:**
+6. **Check that iOS accepts keepsake's writes** before enabling the service. pyicloud rewrites
+   the whole title document on every update, even a checked-only one. It also sends fresh
+   conflict-resolution metadata. Whether iOS merges that cleanly hasn't been verified yet. After
+   the first sync:
+   - On Android, check an item that was added on the iPhone, then run `keepsake sync --once`.
+     The iPhone should show it checked, title unchanged.
+     - It should still be checked after the phone syncs again.
+     - A second `sync --once` should plan 0 operations.
+   - On the iPhone, rename an item, then run `sync --once`. Keep should show exactly the new
+     text.
+   - On Android, add an item, then run `sync --once`. It should appear on the iPhone.
+
+   **Don't enable the service if you see any of these:**
+   - a check that never shows up, or reverts later
+   - a doubled title (e.g. "MilkMilk")
+   - later passes planning updates nobody made
+
+7. **Enable the service:**
    ```sh
    sudo cp deploy/keepsake@.service /etc/systemd/system/
    sudo systemctl daemon-reload
